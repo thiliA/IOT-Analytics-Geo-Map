@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/html" xmlns="http://www.w3.org/1999/html">
+<head>
+    <title>CEP Geo Map</title>
+
+    <!-- style files-->
+    <link rel="stylesheet" href="css/leaflet.css"/>
+    <link rel="stylesheet" href="css/Control.Opacity.css"/>
+    <link rel="stylesheet" href="css/jquery-ui-1.10.3.custom.min.css"/>
+    <link href="css/Control.OSMGeocoder.css" rel="stylesheet">
+    <link href="css/font-awesome.css" rel="stylesheet">
+    <link href="css/easy-button.css" rel="stylesheet">
+    <style type="text/css">
+        #openStreetMapId {
+            height: 850px;
+        }
+
+        #FileUploadFormId {
+            display: none;
+        }
+    </style>
+    <!-- script files-->
+    <script src="js/leaflet.js"></script>
+    <script src="js/Control.Opacity.js"></script>
+    <script src="js/jquery-1.9.1.js"></script>
+    <script src="js/jquery-ui-1.10.3.custom.min.js"></script>
+    <script src="js/Control.OSMGeocoder.js"></script>
+    <script src="js/easy-button.js"></script>
+    <script src="js/controlButtons.js"></script>
+</head>
+
+<!--file upload form-->
+<div id="FileUploadFormId">
+    <table border="1" bordercolor="black" cellpadding="0"
+           cellspacing="0">
+        <tr>
+            <td>Select File:</td>
+            <td><input type="file" id="fileId" size="50" onchange="calculateDimensionsOfImage(event)"/></td>
+        </tr>
+        <tr>
+            <td><input type="button" value="Upload File" onclick="uploadImageFile()"/></td>
+        </tr>
+    </table>
+</div>
+
+<div id="ControlFloorMapId">
+    <button id="UploadFloorMapButton" onclick="showImageFileSelector()">Upload Floor Map</button>
+    <button id="RemoveFloorMapButtonId" onclick="deleteImageFile()">Remove Floor Map</button>
+    <button id="SaveFloorMapButtonId" onclick="saveFloorMap()">Save Floor Map</button>
+    <button id="SaveIndoorMapButtonId" onclick="saveIndoorMap()">Save All</button>
+</div>
+
+<!--Add Control buttons to move image-->
+<div id="ControlPanelId">
+    <button id="MoveLeftButtonId" onclick="moveImageToLeft()">Move Left</button>
+    <button id="MoveRightButtonId" onclick="moveImageToRight()">Move Right</button>
+    <button id="MoveUpButtonId" onclick="moveImageToUp()">Move Up</button>
+    <button id="MoveDownButtonId" onclick="moveImageToDown()">Move Down</button>
+    <button id="MinimizeImageButtonId" onclick="MinimizeImage()">Minimize Image</button>
+    <button id="MaximizeImageButtonId" onclick="MaximizeImage()">Maximize Image</button>
+</div>
+
+<div id="openStreetMapId"></div>
+
+<!--scripts-->
+<script type="text/javascript">
+    //image bounds
+    var swLat;
+    var swLong;
+    var neLat;
+    var neLong;
+    var ImageHeight;
+    var ImageLWidth;
+
+    //containers
+    var baseMap;
+    var ImageMapBounds;
+    var ImageMapUrl;
+    var ImageMapOverlay;
+    var indoorMapObject;
+    var mapObjectsPerFloor = {};
+    var floorObjectsArray = [];
+    var imageOverLayObjectArray = [];
+
+    //utils
+    var isOpacityNotSet = true;
+    var deviation = 0.0001;
+    var opacitySlider = new L.Control.opacitySlider();
+
+    //on load
+    initialiseMap();
+    hideControlButtons();
+
+    //add base map
+    function initialiseMap() {
+        baseMap = L.map('openStreetMapId').setView([6.930156, 79.861488], 15);
+        L.tileLayer("http://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            maxZoom: 19,
+            attribution: 'Map data © <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, CC-BY-SA.'
+        }).addTo(baseMap);
+
+        //searchLayer is a leaflet-control-osm-geocoder
+        var osmGeocoder = new L.Control.OSMGeocoder();
+        baseMap.addControl(osmGeocoder);
+    }
+
+    //create image element and assign uploaded Image. Then calculate Image height and width
+    function calculateDimensionsOfImage(event) {
+        document.getElementById('imageId').src = URL.createObjectURL(event.target.files[0]);
+        $('#imageId').load(function () {
+            ImageHeight = $(this).height();
+            ImageLWidth = $(this).width();
+            console.log("height: " + ImageHeight);
+            console.log("width: " + ImageLWidth);
+        });
+    }
+
+    //upload Image file
+    function uploadImageFile() {
+        var formData = new FormData();
+        formData.append('file', $('#fileId')[0].files[0]);
+
+        $.ajax({
+            url: 'https://10.100.7.55:9443/JaxWebService/services/file_service/uploadFile',
+            type: 'POST',
+            data: formData,
+            processData: false,
+            contentType: false,
+            enctype: 'multipart/form-data',
+            success: function (data) {
+                ImageMapUrl = "images/" + data;
+                document.getElementById('FileUploadFormId').style.display = "none";
+                setImageMapBounds();
+            }
+        });
+    }
+
+    //show file selector
+    function showImageFileSelector() {
+//        $('#FileUploadFormId').hide();
+        document.getElementById('FileUploadFormId').style.display = "block";
+//        document.getElementById("SaveFloorMapButtonId").style.visibility = "hidden";
+//        document.getElementById("SaveIndoorMapButtonId").style.visibility = "hidden";
+    }
+
+    //get base map center and set Image map bounds
+    function setImageMapBounds() {
+        var mapCenter = getCenter();
+        baseMap.setView(mapCenter);
+
+        //scale image
+        var ImageHeightRatio = (ImageHeight / (ImageHeight + ImageLWidth)).toFixed(6);
+        var ImageWidthRatio = (ImageLWidth / (ImageHeight + ImageLWidth)).toFixed(6);
+
+        var baseMapBounds = baseMap.getBounds();
+        var squareHeight = (baseMapBounds.getNorth() - mapCenter[0]).toFixed(6);
+        var squareWidth = (baseMapBounds.getEast().toFixed(6) - mapCenter[1]).toFixed(6);
+
+        //set Image map bounds
+        neLat = mapCenter[0] + (squareHeight * ImageHeightRatio / 2);
+        neLong = mapCenter[1] + (squareWidth * ImageWidthRatio / 2);
+        swLat = mapCenter[0] - (squareHeight * ImageHeightRatio / 2);
+        swLong = mapCenter[1] - (squareWidth * ImageWidthRatio / 2);
+
+        //add Image to map
+        addImageToBaseMap(swLat, swLong, neLat, neLong);
+    }
+
+    function getCenter() {
+        //get base map center
+        var regexExpression = /LatLng\((.+)\)/g;
+        var mapCenterLatLngValues = regexExpression.exec(baseMap.getCenter())[1].split(",");
+
+        var mapCenter = [Number(mapCenterLatLngValues[0]), Number(mapCenterLatLngValues[1])];
+        return mapCenter;
+    }
+
+    //add Image map
+    function addImageToBaseMap(swLat, swLong, neLat, neLong) {
+        ImageMapBounds = [[swLat, swLong], [neLat, neLong]];
+        if (ImageMapOverlay != undefined) {
+            removeImageFromBaseMap();
+        }
+        if (ImageMapUrl != null) {
+            ImageMapOverlay = L.imageOverlay(ImageMapUrl, ImageMapBounds, {opacity: 0.8})
+                    .addTo(baseMap);
+            imageOverLayObjectArray.push(ImageMapOverlay);
+        }
+        setValuesToTextBox();
+
+        //load controllers
+        showControlButtons();
+        enableImageBounds();
+        if (isOpacityNotSet) {
+            baseMap.addControl(opacitySlider);
+            isOpacityNotSet = false;
+        }
+        opacitySlider.setOpacityLayer(ImageMapOverlay);
+    }
+
+    //remove Image map
+    function removeImageFromBaseMap() {
+        //remove layer
+        if (imageOverLayObjectArray.length > 0) {
+            for (i = 0; i < imageOverLayObjectArray.length; i++) {
+                baseMap.removeLayer(imageOverLayObjectArray[i]);
+            }
+        }
+        if (isOpacityNotSet == false) {
+            baseMap.removeControl(opacitySlider);
+            isOpacityNotSet = true;
+        }
+        hideControlButtons();
+        clearValuesInTextBox();
+        disableImageBounds();
+    }
+
+    //delete uploaded image file
+    function deleteImageFile() {
+        removeImageFromBaseMap();
+        $.ajax({
+            url: 'https://10.100.7.55:9443/JaxWebService/services/file_service/deleteImageFile',
+            type: 'POST',
+            data: ImageMapUrl,
+            contentType: 'text/plain',
+            success: function (data) {
+                console.log(data);
+            }
+        });
+    }
+
+    //create indoorMapObject
+    function saveFloorMap() {
+        if (document.getElementById('FloorNumberTextBoxId').value != "" && isNaN(document.getElementById
+                ('FloorNumberTextBoxId').value) == false) {
+            var mapName = prompt("Please enter map name", "image_0"); //todo: check for name duplications
+            var floorNumber = document.getElementById('FloorNumberTextBoxId').value;
+
+            //create a map object
+            var mapObject = {
+                mapObjectName: mapName,
+                mapObjectFloorNumber: floorNumber,
+                mapObjectImageBounds: ImageMapBounds,
+                mapObjectImageUrl: ImageMapUrl
+            };
+
+            //create json array for map objects
+            var floorObj = getFloorObject(floorNumber, indoorMapObject);
+            if (floorObj == null) {
+                var mapObjectsArray = [];
+                mapObjectsArray.push(mapObject);
+                var floorObject = {floorId: floorNumber, maps: mapObjectsArray};
+                console.log("if: floorObject length: " + mapObjectsArray.length);
+
+                //create json array for floor objects
+                floorObjectsArray.push(floorObject);
+                indoorMapObject = {floors: floorObjectsArray};
+                console.log("if: indoorMapObject length: " + floorObjectsArray.length);
+                if (floorNumber != undefined) {
+                    loadSwitchFloorButtons(floorNumber);
+                }
+            } else {
+                floorObj.maps.push(mapObject);
+                console.log("else: indoorMapObject length: " + floorObj.maps.length);
+                console.log("else: indoorMapObject length: " + floorObjectsArray.length);
+            }
+            viewFloorMap(floorNumber); //always load current uploading floor
+        } else {
+            alert("Please enter a valid floor number to proceed !! ");
+        }
+    }
+
+    //save indoorMapObject to a file
+    //todo: user interface (hide save all button)
+    function saveIndoorMap() {
+        if (indoorMapObject != undefined) {
+            var indoorMapName = prompt("Please enter map name", "Trace");
+            $.ajax({
+                url: 'https://10.100.7.55:9443/JaxWebService/services/file_service/save',
+                type: 'POST',
+                contentType: 'text/plain',
+                data: "mapName=" + indoorMapName + "&jsonObject=" + JSON.stringify(indoorMapObject),
+                success: function (data) {
+                    console.log(data);
+                }
+            });
+        } else {
+            alert("Empty indoor map");
+        }
+    }
+
+    //load buttons to switch between floors
+    function loadSwitchFloorButtons(floorNumber) {
+        L.easyButton({
+            position: 'bottomright',
+            states: [{
+                icon: '<div id="floorButtonId"><strong></strong>' + floorNumber + '</strong></div>',
+                onClick: function () {
+                    viewFloorMap(floorNumber);
+                }
+            }]
+        }).addTo(baseMap);
+    }
+
+    //view map
+    function viewFloorMap(viewFloorNumber) {
+        console.log("view mode activated");
+        removeImageFromBaseMap();
+        if (getFloorObject(viewFloorNumber, indoorMapObject) != null) {
+            var mapObjArray = getFloorObject(viewFloorNumber, indoorMapObject).maps;
+            for (i = 0; i < mapObjArray.length; i++) {
+                var mapObj = mapObjArray[i];
+                ImageMapOverlay = L.imageOverlay(mapObj.mapObjectImageUrl, mapObj.mapObjectImageBounds, {opacity: 0.8})
+                        .addTo(baseMap);
+                imageOverLayObjectArray.push(ImageMapOverlay);
+                document.getElementById("SaveIndoorMapButtonId").style.visibility = "visible";
+            }
+        } else {
+            console.log("Please save the image before viewing !!");
+        }
+    }
+
+    //get floor objects
+    function getFloorObject(floorNo, indoorMapObj) {
+        if (indoorMapObj != undefined) {
+            var floorObjArray = indoorMapObj.floors;
+            for (i = 0; i < floorObjArray.length; i++) {
+                var floorObj = floorObjArray[i];
+                if (floorObj.floorId == floorNo) {
+                    return floorObj;
+                } else {
+                    console.log("No matched floor number");
+                }
+            }
+            return null;
+        }
+        else {
+            return null;
+        }
+    }
+
+    //functions to control Image map
+    function moveImageToRight() {
+        baseMap.removeLayer(ImageMapOverlay);
+        swLong = swLong + deviation;
+        neLong = neLong + deviation;
+        addImageToBaseMap(swLat, swLong, neLat, neLong);
+        setValuesToTextBox();
+    }
+
+    function moveImageToLeft() {
+        baseMap.removeLayer(ImageMapOverlay);
+        swLong = swLong - deviation;
+        neLong = neLong - deviation;
+        addImageToBaseMap(swLat, swLong, neLat, neLong);
+        setValuesToTextBox();
+    }
+
+    function moveImageToUp() {
+        baseMap.removeLayer(ImageMapOverlay);
+        swLat = swLat + deviation;
+        neLat = neLat + deviation;
+        addImageToBaseMap(swLat, swLong, neLat, neLong);
+        setValuesToTextBox();
+    }
+
+    function moveImageToDown() {
+        baseMap.removeLayer(ImageMapOverlay);
+        swLat = swLat - deviation;
+        neLat = neLat - deviation;
+        addImageToBaseMap(swLat, swLong, neLat, neLong);
+        setValuesToTextBox();
+    }
+
+    function MinimizeImage() {
+        baseMap.removeLayer(ImageMapOverlay);
+        neLat = neLat - deviation;
+        neLong = neLong - deviation;
+        addImageToBaseMap(swLat, swLong, neLat, neLong);
+        setValuesToTextBox();
+    }
+
+    function MaximizeImage() {
+        baseMap.removeLayer(ImageMapOverlay);
+        neLat = neLat + deviation;
+        neLong = neLong + deviation;
+        addImageToBaseMap(swLat, swLong, neLat, neLong);
+        setValuesToTextBox();
+    }
+
+    //set values to text box
+    function setValuesToTextBox() {
+        document.getElementById('SouthWestBoundLatitudeTextBoxId').value = swLat.toFixed(6);
+        document.getElementById('SouthWestBoundLongitudeTextBoxId').value = swLong.toFixed(6);
+        document.getElementById('NorthEastBoundLatitudeTextBoxId').value = neLat.toFixed(6);
+        document.getElementById('NorthEastBoundLongitudeTextBoxId').value = neLong.toFixed(6);
+    }
+
+    //reset values
+    function clearValuesInTextBox() {
+        document.getElementById('SouthWestBoundLatitudeTextBoxId').value = "";
+        document.getElementById('SouthWestBoundLongitudeTextBoxId').value = "";
+        document.getElementById('NorthEastBoundLatitudeTextBoxId').value = "";
+        document.getElementById('NorthEastBoundLongitudeTextBoxId').value = "";
+        document.getElementById('FloorNumberTextBoxId').value = "";
+    }
+
+    //get values from text box
+    function getValuesFromTextBox() {
+        if (document.getElementById('SouthWestBoundLatitudeTextBoxId').value != "" && document.getElementById
+                ('SouthWestBoundLongitudeTextBoxId').value != "" && document.getElementById
+                ('NorthEastBoundLatitudeTextBoxId').value != "" && document.getElementById('NorthEastBoundLongitudeTextBoxId').
+                        value != "" && typeof ImageMapOverlay != 'undefined') {
+            swLat = Number(document.getElementById('SouthWestBoundLatitudeTextBoxId').value);
+            swLong = Number(document.getElementById('SouthWestBoundLongitudeTextBoxId').value);
+            neLat = Number(document.getElementById('NorthEastBoundLatitudeTextBoxId').value);
+            neLong = Number(document.getElementById('NorthEastBoundLongitudeTextBoxId').value);
+            baseMap.removeLayer(ImageMapOverlay);
+            addImageToBaseMap(swLat, swLong, neLat, neLong);
+        } else {
+            alert("Please set values!!");
+        }
+    }
+
+    //show control buttons
+    function showControlButtons() {
+        $('#ControlPanelId').show();
+        $('#RemoveFloorMapButtonId').show();
+        $('#SaveFloorMapButtonId').show();
+    }
+
+    //hide control buttons
+    function hideControlButtons() {
+        $('#ControlPanelId').hide();
+        $('#RemoveFloorMapButtonId').hide();
+        $('#SaveFloorMapButtonId').hide();
+    }
+
+    function enableImageBounds() {
+        document.getElementById('SouthWestBoundLatitudeTextBoxId').disabled = false;
+        document.getElementById('SouthWestBoundLongitudeTextBoxId').disabled = false;
+        document.getElementById('NorthEastBoundLatitudeTextBoxId').disabled = false;
+        document.getElementById('NorthEastBoundLongitudeTextBoxId').disabled = false;
+    }
+
+    function disableImageBounds() {
+        document.getElementById('SouthWestBoundLatitudeTextBoxId').disabled = true;
+        document.getElementById('SouthWestBoundLongitudeTextBoxId').disabled = true;
+        document.getElementById('NorthEastBoundLatitudeTextBoxId').disabled = true;
+        document.getElementById('NorthEastBoundLongitudeTextBoxId').disabled = true;
+    }
+</script>
+
+<!--Add labels-->
+<br/><label>South West Bound Latitude: </label><input type="text" id="SouthWestBoundLatitudeTextBoxId" disabled>
+<label>South West Bound Longitude: </label><input type="text" id="SouthWestBoundLongitudeTextBoxId" disabled>
+<label>North East Bound Latitude: </label><input type="text" id="NorthEastBoundLatitudeTextBoxId" disabled>
+<label>North East Bound Longitude: </label><input type="text" id="NorthEastBoundLongitudeTextBoxId" disabled>
+<button onclick="getValuesFromTextBox()">Set Values</button>
+<label>Floor No: </label><input type="text" id="FloorNumberTextBoxId">
+<!--Image div to get height and width of the uploaded image-->
+<img id="imageId" hidden/>
+
+</body>
+</html>

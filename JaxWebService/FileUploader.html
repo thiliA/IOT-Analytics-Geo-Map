@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<head lang="en">
+    <meta charset="UTF-8">
+    <title>Apache CXF : File Upload</title>
+</head>
+<body>
+<b>Apache CXF : JAX-RS Restful web service Learning</b>
+<h4>Uploading files using JAX-RS Restful web service</h4>
+<div
+        style="width: 400px; border: 1px solid blue; padding: 20px; text-align: center;">
+
+    <form method="post" action="http://10.100.7.55:9763/JaxWebService/services/file_service/uploadFile"
+          enctype="multipart/form-data">
+        <table align="center" border="1" bordercolor="black" cellpadding="0"
+               cellspacing="0">
+            <tr>
+                <td>Select File:</td>
+                <td><input type="file" name="uploadedFile" size="100" /></td>
+            </tr>
+            <tr>
+                <td><input type="submit" value="Upload File" /></td>
+                <td><input type="reset" value="Reset" /></td>
+            </tr>
+        </table>
+    </form>
+</div>
+</body>
+</html>
