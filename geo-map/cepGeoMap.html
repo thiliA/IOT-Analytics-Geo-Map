@@ -121,7 +121,7 @@
         formData.append('file', $('#fileId')[0].files[0]);
 
         $.ajax({
-            url: 'https://10.100.7.55:9443/JaxWebService/services/file_service/uploadFile',
+            url: 'https://localhost:9443/JaxWebService/services/file_service/uploadImageFile',
             type: 'POST',
             data: formData,
             processData: false,
@@ -219,7 +219,7 @@
     function deleteImageFile() {
         removeImageFromBaseMap();
         $.ajax({
-            url: 'https://10.100.7.55:9443/JaxWebService/services/file_service/deleteImageFile',
+            url: 'https://localhost:9443/JaxWebService/services/file_service/deleteImageFile',
             type: 'POST',
             data: ImageMapUrl,
             contentType: 'text/plain',
@@ -276,7 +276,7 @@
         if (indoorMapObject != undefined) {
             var indoorMapName = prompt("Please enter map name", "Trace");
             $.ajax({
-                url: 'https://10.100.7.55:9443/JaxWebService/services/file_service/save',
+                url: 'https://localhost:9443/JaxWebService/services/file_service/saveIndoorMap',
                 type: 'POST',
                 contentType: 'text/plain',
                 data: "mapName=" + indoorMapName + "&jsonObject=" + JSON.stringify(indoorMapObject),
